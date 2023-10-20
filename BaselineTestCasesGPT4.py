@@ -790,8 +790,1032 @@ class python_baseline_tests(unittest.TestCase):
         matcher.compare_and_visit(node, pattern)
         self.assertTrue(matcher.matches)
 
+# def is_wildcard(self, p) : PatternMatcher (from ast_util.py)
+# 21
+
+def test_name_node_wildcard(self):
+    name_node = gast.Name(id='_', ctx=gast.Load(), annotation=None, type_comment=None)
+    self.assertTrue(self.matcher.is_wildcard(name_node))
+
+def test_string_wildcard(self):
+    self.assertTrue(self.matcher.is_wildcard('_'))
+
+def test_non_wildcard(self):
+    # Testing with various non-wildcard values.
+    non_wildcards = [
+        gast.Name(id='not_a_wildcard', ctx=gast.Load(), annotation=None, type_comment=None),
+        'not_a_wildcard',
+        123,
+        None,
+        []
+    ]
+    for val in non_wildcards:
+        self.assertFalse(self.matcher.is_wildcard(val))
+
+# def generic_visit(self, node) : PatternMatcher (from ast_util.py)
+# 22
+
+def test_basic_match(self):
+    # Given
+    node = ast.parse("a = 5").body[0]
+    pattern = ast.parse("a = 5").body[0]
+
+    matcher = PatternMatcher(pattern)
+    matcher.visit(node)
+
+    # Then
+    self.assertTrue(matcher.matches)
+
+def test_wildcard_match(self):
+    # Given
+    node = ast.parse("a = 10").body[0]
+    pattern_str = "_ = _"
+    pattern = ast.parse(pattern_str).body[0]
+
+    matcher = PatternMatcher(pattern)
+    matcher.visit(node)
+
+    # Then
+    self.assertTrue(matcher.matches)
+
+def test_mismatch_in_list_size(self):
+    # Given
+    node = ast.parse("[a, b, c]").body[0].value
+    pattern = ast.parse("[a, b]").body[0].value
+
+    matcher = PatternMatcher(pattern)
+    matcher.visit(node)
+
+    # Then
+    self.assertFalse(matcher.matches)
+
+# def matches(node, pattern) : ast_util.py
+# 23
+
+def test_matches_exact_match():
+    node = ast.parse('a + b')
+    pattern = 'a + b'
+    assert matches(node, pattern) == True, "Expected True for exact match but got False."
+
+def test_matches_wildcard():
+    node = ast.parse('a + b')
+
+    pattern_1 = '_ + b'
+    assert matches(node, pattern_1) == True, "Expected True for wildcard match but got False."
+
+    pattern_2 = 'a + _'
+    assert matches(node, pattern_2) == True, "Expected True for wildcard match but got False."
+
+    pattern_3 = '_ + _'
+    assert matches(node, pattern_3) == True, "Expected True for wildcard match but got False."
+
+def test_matches_non_matching():
+    node = ast.parse('a + b')
+
+    pattern_1 = 'b + a'
+    assert matches(node, pattern_1) == False, "Expected False for non-matching pattern but got True."
+
+    pattern_2 = 'a - b'
+    assert matches(node, pattern_2) == False, "Expected False for non-matching pattern but got True."
+
+    pattern_3 = 'a * b'
+    assert matches(node, pattern_3) == False, "Expected False for non-matching pattern but got True."
+
+# def apply_to_single_assignments(targets, values, apply_fn) : ast_util.py
+# 24
+
+def test_simple_assignment():
+    node_targets = ast.parse("a").body[0].value
+    node_values = ast.parse("1").body[0].value
+    results = []
+
+    def mock_apply_fn(target, value):
+        results.append((target.id, value.n))
+
+    apply_to_single_assignments(node_targets, node_values, mock_apply_fn)
+
+    assert len(results) == 1
+    assert results[0] == ('a', 1)
+
+def test_unpacked_assignment():
+    node_targets = ast.parse("a, b").body[0].value
+    node_values = ast.parse("1, 2").body[0].value
+    results = []
+
+    def mock_apply_fn(target, value):
+        results.append((target.id, value.n))
+
+    apply_to_single_assignments(node_targets, node_values, mock_apply_fn)
+
+    assert len(results) == 2
+    assert ('a', 1) in results
+    assert ('b', 2) in results
+
+def test_nested_unpacked_assignment():
+    node_targets = ast.parse("a, (b, c)").body[0].value
+    node_values = ast.parse("1, (2, 3)").body[0].value
+    results = []
+
+    def mock_apply_fn(target, value):
+        results.append((target.id if isinstance(target, ast.Name) else None, value.n if isinstance(value, ast.Num) else None))
+
+    apply_to_single_assignments(node_targets, node_values, mock_apply_fn)
+
+    assert len(results) == 3
+    assert ('a', 1) in results
+    assert ('b', 2) in results
+    assert ('c', 3) in results
+
+# def parallel_walk(node, other) : ast_util.py
+# 25
+
+def test_parallel_walk_identical_structure():
+    node1 = ast.parse('a + b')
+    node2 = ast.parse('x + y')
+    pairs = list(parallel_walk(node1, node2))
+
+    assert len(pairs) == 5  # BinOp, Name, Load, Name, Load
+    assert isinstance(pairs[0][0], ast.BinOp) and isinstance(pairs[0][1], ast.BinOp)
+    assert isinstance(pairs[1][0], ast.Name) and isinstance(pairs[1][1], ast.Name)
+
+def test_parallel_walk_different_structure():
+    node1 = ast.parse('a + b')
+    node2 = ast.parse('x - y')
+    try:
+        pairs = list(parallel_walk(node1, node2))
+        assert False, "Expected ValueError due to different structures, but didn't get it."
+    except ValueError:
+        pass
+
+def test_parallel_walk_with_different_data_types():
+    node1 = ast.parse('a + b')
+    node2 = [('x + y')]
+    try:
+        pairs = list(parallel_walk(node1, node2))
+        assert False, "Expected ValueError due to different data types, but didn't get it."
+    except ValueError:
+        pass
+
+# def has(self, entity, subkey) : cache.py
+# 26
+
+def test_code_object_cache_has():
+    cache = CodeObjectCache()
+
+    def test_fn():
+        pass
+
+    # Test if a function not added to the cache is not found
+    assert not cache.has(test_fn, 'some_subkey')
+
+    # Add function to cache and test again
+    cache[test_fn]['some_subkey'] = 'some_value'
+    assert cache.has(test_fn, 'some_subkey')
+
+    # Test a different subkey which wasn't added
+    assert not cache.has(test_fn, 'different_subkey')
+
+def test_unbound_instance_cache_has():
+    cache = UnboundInstanceCache()
+
+    def test_fn():
+        pass
+
+    # Test if a function not added to the cache is not found
+    assert not cache.has(test_fn, 'some_subkey')
+
+    # Add function to cache and test again
+    cache[test_fn]['some_subkey'] = 'some_value'
+    assert cache.has(test_fn, 'some_subkey')
+
+    # Test a different subkey which wasn't added
+    assert not cache.has(test_fn, 'different_subkey')
+
+def test_unbound_instance_cache_for_method():
+    cache = UnboundInstanceCache()
+
+    class TestClass:
+        def method(self):
+            pass
+
+    instance = TestClass()
+    # Test if a method not added to the cache is not found
+    assert not cache.has(instance.method, 'some_subkey')
+
+    # Add method to cache and test again
+    cache[instance.method]['some_subkey'] = 'some_value'
+    assert cache.has(instance.method, 'some_subkey')
+
+    # Test a different subkey which wasn't added
+    assert not cache.has(instance.method, 'different_subkey')
+
+# def __getitem__(self, entity) : cache.py
+# 27
+
+def test_code_object_cache_getitem():
+    cache = CodeObjectCache()
+
+    def test_fn():
+        pass
+
+    # Test if a function not added to the cache initializes an empty dictionary
+    assert isinstance(cache[test_fn], dict) and not cache[test_fn]
+
+    # Add a subkey-value to the function in the cache and test retrieval
+    cache[test_fn]['some_subkey'] = 'some_value'
+    assert cache[test_fn]['some_subkey'] == 'some_value'
+
+    # Test retrieval for a different function
+    def another_fn():
+        pass
+
+    assert isinstance(cache[another_fn], dict) and not cache[another_fn]
+
+def test_unbound_instance_cache_getitem():
+    cache = UnboundInstanceCache()
+
+    def test_fn():
+        pass
+
+    # Test if a function not added to the cache initializes an empty dictionary
+    assert isinstance(cache[test_fn], dict) and not cache[test_fn]
+
+    # Add a subkey-value to the function in the cache and test retrieval
+    cache[test_fn]['some_subkey'] = 'some_value'
+    assert cache[test_fn]['some_subkey'] == 'some_value'
+
+    # Test retrieval for a different function
+    def another_fn():
+        pass
+
+    assert isinstance(cache[another_fn], dict) and not cache[another_fn]
+
+def test_unbound_instance_cache_for_method_getitem():
+    cache = UnboundInstanceCache()
+
+    class TestClass:
+        def method(self):
+            pass
+
+    instance = TestClass()
+
+    # Test if a method not added to the cache initializes an empty dictionary
+    assert isinstance(cache[instance.method], dict) and not cache[instance.method]
+
+    # Add a subkey-value to the method in the cache and test retrieval
+    cache[instance.method]['some_subkey'] = 'some_value'
+    assert cache[instance.method]['some_subkey'] == 'some_value'
+
+    # Test retrieval for a different method
+    class AnotherClass:
+        def another_method(self):
+            pass
+
+    another_instance = AnotherClass()
+    assert isinstance(cache[another_instance.another_method], dict) and not cache[another_instance.another_method]
+
+# def _get_key(self, entity) : CodeObjectCache (from cache.py)
+def test_get_key_for_regular_function():
+    cache = CodeObjectCache()
+
+    def test_fn():
+        pass
+
+    key = cache._get_key(test_fn)
+    assert key == test_fn.__code__, "Expected code object for regular function."
+
+def test_get_key_without_code_object():
+    cache = CodeObjectCache()
+
+    class NoCodeObject:
+        # This class does not have a __code__ attribute
+        pass
+
+    no_code_object = NoCodeObject()
+    key = cache._get_key(no_code_object)
+    assert key == no_code_object, "Expected the object itself for objects without a code object."
+
+def test_get_key_for_lambda():
+    cache = CodeObjectCache()
+
+    lambda_fn = lambda x: x + 1
+    key = cache._get_key(lambda_fn)
+    assert key == lambda_fn.__code__, "Expected code object for lambda function."
+
+# def _get_key(self, entity) : UnboundInstanceCache (from cache.py)
+# 28
+
+def test_unbound_instance_cache_get_key_for_function():
+    cache = UnboundInstanceCache()
+
+    def test_fn():
+        pass
+
+    # Test the _get_key method for a function
+    key = cache._get_key(test_fn)
+    assert key == test_fn
+
+def test_unbound_instance_cache_get_key_for_method():
+    cache = UnboundInstanceCache()
+
+    class TestClass:
+        def method(self):
+            pass
+
+    instance = TestClass()
+    # Test the _get_key method for a method
+    key = cache._get_key(instance.method)
+    assert key == TestClass.method
+
+def test_unbound_instance_cache_get_key_for_lambda():
+    cache = UnboundInstanceCache()
+
+    # Define a lambda function
+    lambda_fn = lambda x: x + 1
+
+    # Test the _get_key method for a lambda function
+    key = cache._get_key(lambda_fn)
+    assert key == lambda_fn
+
+#  def to_exception(self, source_error) : ErrorMetadataBase (from error_utils.py)
+# 29
+
+def test_known_error_types():
+    """Test the to_exception method for known error types."""
+    cause_message = "Some cause message"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of type NameError
+    source_error = NameError("Original NameError message")
+    new_exception = error_metadata.to_exception(source_error)
+
+    assert isinstance(new_exception, NameError)
+    assert "in user code:" in str(new_exception)
+    assert "Original NameError message" in str(new_exception)
 
 
+def test_unknown_error_type():
+    """Test the to_exception method for unknown error types."""
+    cause_message = "Another cause message"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of custom type
+    class CustomError(Exception):
+        pass
+
+    source_error = CustomError("Original CustomError message")
+    new_exception = error_metadata.to_exception(source_error)
+
+    assert isinstance(new_exception, CustomError)
+    assert "in user code:" in str(new_exception)
+    assert "Original CustomError message" not in str(new_exception)  # The original message is replaced
+
+
+def test_key_error_type():
+    """Test the to_exception method for KeyError type."""
+    cause_message = "Key 'some_key' not found"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of type KeyError
+    source_error = KeyError("some_key")
+    new_exception = error_metadata.to_exception(source_error)
+
+    assert isinstance(new_exception, KeyError)
+    assert "in user code:" in str(new_exception)
+    assert "Key 'some_key' not found" in str(new_exception)
+
+# def create_exception(self, source_error) : ErrorMetadataBase (from errors_util.py)
+# 30
+
+def test_create_known_error_types():
+    """Test the create_exception method for known error types."""
+    cause_message = "Some cause message"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of type NameError
+    source_error = NameError("Original NameError message")
+    new_exception = error_metadata.create_exception(source_error)
+
+    assert isinstance(new_exception, NameError)
+    assert "in user code:" in str(new_exception)
+    assert "Original NameError message" in str(new_exception)
+
+
+def test_create_unknown_error_type():
+    """Test the create_exception method for unknown error types."""
+    cause_message = "Another cause message"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of custom type
+    class CustomError(Exception):
+        pass
+
+    source_error = CustomError("Original CustomError message")
+    new_exception = error_metadata.create_exception(source_error)
+
+    assert new_exception is None  # Expected behavior since custom errors are not specially handled
+
+
+def test_create_key_error_type():
+    """Test the create_exception method for KeyError type."""
+    cause_message = "Key 'some_key' not found"
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    # Create a source error of type KeyError
+    source_error = KeyError("some_key")
+    new_exception = error_metadata.create_exception(source_error)
+
+    assert isinstance(new_exception, MultilineMessageKeyError)  # It should be this specific subclass
+    assert "in user code:" in str(new_exception)
+    assert "Key 'some_key' not found" in str(new_exception)
+
+# def get_message(self) : ErrorMetadataBase (from error_utils.py)
+# 31
+
+
+def test_simple_get_message():
+    """Test get_message without any cause metadata."""
+    cause_message = "An error occurred in user code."
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    message = error_metadata.get_message()
+
+    assert "in user code:" in message
+    assert cause_message in message
+
+
+def test_get_message_with_cause_metadata():
+    """Test get_message with cause metadata."""
+    inner_cause_message = "Inner error occurred."
+    outer_cause_message = "Outer error occurred due to inner error."
+    source_map = {}
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    inner_error_metadata = ErrorMetadataBase(tb, None, inner_cause_message, source_map, converter_filename)
+    outer_error_metadata = ErrorMetadataBase(tb, inner_error_metadata, outer_cause_message, source_map, converter_filename)
+
+    message = outer_error_metadata.get_message()
+
+    assert "in user code:" in message
+    assert inner_cause_message not in message  # Only the outer cause message should be present
+    assert outer_cause_message in message
+
+
+def test_get_message_with_converted_frame():
+    """Test get_message when one of the frames is converted."""
+    cause_message = "A converted frame caused the error."
+    source_map = {
+        traceback.FrameSummary("somefile.py", 42, "some_func", "some code"): "Converted code information"
+    }
+    converter_filename = "converter.py"
+
+    tb = traceback.extract_stack()
+    error_metadata = ErrorMetadataBase(tb, None, cause_message, source_map, converter_filename)
+
+    message = error_metadata.get_message()
+
+    assert "in user code:" in message
+    assert cause_message in message
+    # Assuming that the frame that matches is included in the traceback
+    assert 'somefile.py", line 42, in some_func  *' in message
+
+# def _stack_trace_inside_mapped_code(tb, source_map, converter_filename) : error_utils.py
+# 32
+
+def test_no_matching_frame():
+    """Test the function when no frame matches the source_map."""
+    # Creating a fake traceback
+    def dummy_function():
+        raise Exception("Dummy exception")
+    try:
+        dummy_function()
+    except:
+        tb = traceback.extract_tb(traceback.exc_info()[1].__traceback__)
+
+    # Empty source map
+    source_map = {}
+
+    converter_filename = "converter.py"
+
+    result = _stack_trace_inside_mapped_code(tb, source_map, converter_filename)
+    # Since no frame matches the source_map, all traceback frames are included.
+    assert len(result) == len(tb)
+
+
+def test_matching_frame():
+    """Test the function when there is a frame matching the source_map."""
+    # Creating a fake traceback
+    def another_dummy_function():
+        raise Exception("Another dummy exception")
+    try:
+        another_dummy_function()
+    except:
+        tb = traceback.extract_tb(traceback.exc_info()[1].__traceback__)
+
+    # Define a source_map that maps the location inside dummy_function to some original source
+    loc = LineLocation(filename=tb[-1].filename, lineno=tb[-1].lineno)
+    origin = OriginInfo(loc, "original_function", "original source code line")
+    source_map = {loc: origin}
+
+    converter_filename = "converter.py"
+
+    result = _stack_trace_inside_mapped_code(tb, source_map, converter_filename)
+    # The summarized traceback should have one frame
+    assert len(result) == 1
+    assert result[0].function_name == "original_function"
+
+
+def test_converter_filename():
+    """Test the function with the converter_filename frame."""
+    # Creating a fake traceback
+    def yet_another_dummy_function():
+        raise Exception("Yet another dummy exception")
+    try:
+        yet_another_dummy_function()
+    except:
+        tb = traceback.extract_tb(traceback.exc_info()[1].__traceback__)
+
+    source_map = {}
+
+    # Set the converter_filename to be the current filename
+    converter_filename = tb[-1].filename
+
+    result = _stack_trace_inside_mapped_code(tb, source_map, converter_filename)
+    # No frames should match the converter_filename, so all frames are included.
+    assert len(result) == len(tb)
+
+# def _is_constant_gast_3(node) : gast_util.py
+# 33
+
+def test_is_constant_gast_3_with_string():
+    node = gast.Constant(value="Hello", kind=None)
+    assert _is_constant_gast_3(node) == True
+
+def test_is_constant_gast_3_with_number():
+    node = gast.Constant(value=42, kind=None)
+    assert _is_constant_gast_3(node) == True
+
+def test_is_constant_gast_3_with_non_constant():
+    node = gast.Name(id="variable_name", ctx=gast.Load(), type_comment=None)
+    assert _is_constant_gast_3(node) == False
+
+# def is_literal(node) : gast_util.py
+# 34
+
+def test_is_literal_with_string():
+    node = gast.Constant(value="Hello", kind=None)  # Assuming GAST3 for simplicity
+    assert is_literal(node) == True, "Failed on string literal"
+
+def test_is_literal_with_boolean_name():
+    node = gast.Name(id="True", ctx=gast.Load(), type_comment=None)  # Python2 representation of boolean
+    assert is_literal(node) == True, "Failed on boolean name"
+
+def test_is_literal_with_non_literal():
+    node = gast.Name(id="variable_name", ctx=gast.Load(), type_comment=None)
+    assert is_literal(node) == False, "Failed on non-literal"
+
+# def _is_ellipsis_gast_2(node) : gast_util.py
+# 35
+
+def test_is_ellipsis_gast_2_with_ellipsis():
+    node = gast.Ellipsis()
+    assert _is_ellipsis_gast_2(node) == True
+
+def test_is_ellipsis_gast_2_with_constant():
+    node = gast.Constant(value="Not an ellipsis", kind=None)
+    assert _is_ellipsis_gast_2(node) == False
+
+def test_is_ellipsis_gast_2_with_non_ellipsis():
+    node = gast.Name(id="variable_name", ctx=gast.Load(), type_comment=None)
+    assert _is_ellipsis_gast_2(node) == False
+
+
+# def _is_ellipsis_gast_3(node) : gast_util.py
+# 36
+
+def test_is_ellipsis_gast_3_with_ellipsis():
+    node = gast.Constant(value=Ellipsis, kind=None)
+    assert _is_ellipsis_gast_3(node) == True, "Expected node to be recognized as ellipsis"
+
+def test_is_ellipsis_gast_3_with_string():
+    node = gast.Constant(value="Hello", kind=None)
+    assert _is_ellipsis_gast_3(node) == False, "Expected node to not be recognized as ellipsis"
+
+def test_is_ellipsis_gast_3_with_non_constant():
+    node = gast.Name(id="variable_name", ctx=gast.Load(), type_comment=None)
+    assert _is_ellipsis_gast_3(node) == False, "Expected node to not be recognized as ellipsis"
+
+# def islambda(f) : inspectutils.py
+# 37
+
+def test_islambda_with_lambda_function():
+    # Test Case 1: Check with a lambda function
+    test_lambda = lambda x: x + 1
+    assert islambda(test_lambda) == True, "Expected True for lambda functions"
+
+def test_islambda_with_regular_function():
+    # Test Case 2: Check with a regular function
+    def test_function(x):
+        return x + 1
+    assert islambda(test_function) == False, "Expected False for non-lambda functions"
+
+def test_islambda_with_built_in_function():
+    # Test Case 3: Check with a built-in function
+    assert islambda(len) == False, "Expected False for built-in functions"
+
+
+# def isnamedtuple(f) : inspect_utils.py
+# 38
+
+def test_basic_namedtuple(self):
+    # Define a basic namedtuple
+    Point = namedtuple('Point', ['x', 'y'])
+    p = Point(1, 2)
+    # Check if it's correctly identified as a namedtuple
+    self.assertTrue(isnamedtuple(p))
+
+def test_non_namedtuple(self):
+    # Regular tuple
+    t = (1, 2, 3)
+    self.assertFalse(isnamedtuple(t))
+
+    # Regular class
+    class MyClass:
+        pass
+    obj = MyClass()
+    self.assertFalse(isnamedtuple(obj))
+
+def test_subclass_of_namedtuple(self):
+    # Define a namedtuple
+    Point = namedtuple('Point', ['x', 'y'])
+
+    # Create a subclass of the namedtuple
+    class ExtendedPoint(Point):
+        def magnitude(self):
+            return (self.x ** 2 + self.y ** 2) ** 0.5
+
+    ep = ExtendedPoint(3, 4)
+    # It should still be identified as a namedtuple
+    self.assertTrue(isnamedtuple(ep))
+
+# def isbuiltin(f) : inspect_utils.py
+# 39
+
+def test_isbuiltin_with_known_builtin_function():
+    assert isbuiltin(print) == True, "Expected 'print' to be recognized as a built-in function"
+
+def my_function():
+    return "Hello, World!"
+
+def test_isbuiltin_with_user_defined_function():
+    assert isbuiltin(my_function) == False, "Expected 'my_function' not to be recognized as a built-in function"
+
+def test_isbuiltin_with_builtin_datatype():
+    assert isbuiltin(int) == False, "Expected 'int' datatype not to be recognized as a built-in function"
+
+# def isconstructor(cls) : inspect_utils.py
+# 40
+
+def test_regular_class(self):
+    """Test that a regular class is considered a constructor."""
+    self.assertTrue(isconstructor(RegularClass))
+
+def test_instance_of_class(self):
+    """Test that an instance of a class is not considered a constructor."""
+    obj = RegularClass()
+    self.assertFalse(isconstructor(obj))
+
+def test_class_with_callable_meta(self):
+    """Test that a class with a callable metaclass is not considered a constructor."""
+    self.assertFalse(isconstructor(ClassWithCallableMeta))
+
+# def _fix_linecache_record(obj) : inspect_utils.py
+# 41
+
+def test_fix_linecache_record_with_mismatched_module():
+    # Define a dummy function in this module
+    def dummy_function():
+        return "I am a dummy!"
+
+    # Store the original source file location
+    original_file = inspect.getfile(dummy_function)
+
+    # Wrap the function using functools.wraps and modify its __module__
+    @functools.wraps(dummy_function)
+    def wrapped_function():
+        return dummy_function()
+
+    wrapped_function.__module__ = "fake_module"
+
+    # Apply _fix_linecache_record
+    _fix_linecache_record(wrapped_function)
+
+    # Ensure the cache is updated with the original file
+    updated_file = linecache.getsourcefile(wrapped_function)
+    assert original_file == updated_file, f"Expected {original_file}, but got {updated_file}"
+
+def test_fix_linecache_record_with_matched_module():
+    def another_dummy():
+        return "I am another dummy!"
+
+    # Store the original source file location
+    original_file = inspect.getfile(another_dummy)
+
+    # Apply _fix_linecache_record
+    _fix_linecache_record(another_dummy)
+
+    # Ensure the cache remains the same
+    updated_file = linecache.getsourcefile(another_dummy)
+    assert original_file == updated_file, f"Expected {original_file}, but got {updated_file}"
+
+def test_fix_linecache_record_without_module_attribute():
+    class DummyClass:
+        def method(self):
+            return "Dummy method!"
+
+    dummy_instance = DummyClass()
+
+    # Deliberately delete the __module__ attribute
+    del dummy_instance.__module__
+
+    # Apply _fix_linecache_record and ensure it doesn't raise an error
+    try:
+        _fix_linecache_record(dummy_instance)
+        assert True, "Function handled objects without __module__ gracefully."
+    except AttributeError:
+        assert False, "Function should handle objects without __module__ without raising an error."
+
+# def getimmediatesource(obj) : inspect_utils.py
+# 42
+
+def test_getimmediatesource_simple_function():
+    def my_function():
+        """A simple function."""
+        return 42
+
+    source = getimmediatesource(my_function)
+    expected = 'def my_function():\n    """A simple function."""\n    return 42\n'
+    assert source == expected, f"Expected: {expected}, Got: {source}"
+
+def test_getimmediatesource_wrapped_function():
+    def my_function():
+        """Original function."""
+        return 42
+
+    @functools.wraps(my_function)
+    def wrapped_function():
+        return my_function()
+
+    source = getimmediatesource(wrapped_function)
+    expected = '@functools.wraps(my_function)\n    def wrapped_function():\n        return my_function()\n'
+    assert source == expected, f"Expected: {expected}, Got: {source}"
+
+def test_getimmediatesource_lambda():
+    lambda_func = lambda x: x * 2
+    source = getimmediatesource(lambda_func)
+    expected = 'lambda_func = lambda x: x * 2\n'
+    assert source == expected, f"Expected: {expected}, Got: {source}"
+
+# def getnamespace(f) : inspect_utils.py
+# 43
+
+def test_getnamespace_basic_function():
+    x = 10
+    y = 20
+    def sample_function():
+        a = 1
+        return a + x + y
+
+    namespace = getnamespace(sample_function)
+
+    assert 'x' in namespace and namespace['x'] == 10, "Expected x to be in namespace with value 10"
+    assert 'y' in namespace and namespace['y'] == 20, "Expected y to be in namespace with value 20"
+    assert 'a' not in namespace, "a should not be in the namespace as it is a local variable"
+
+test_getnamespace_basic_function()
+
+def test_getnamespace_nested_function():
+    x = 10
+    def outer_function():
+        y = 20
+        def inner_function():
+            z = 30
+            return x + y + z
+
+        return inner_function()
+
+    namespace = getnamespace(outer_function)
+
+    assert 'x' in namespace and namespace['x'] == 10, "Expected x to be in namespace with value 10"
+    assert 'y' not in namespace, "y should not be in the namespace of the outer function"
+    assert 'inner_function' in namespace, "inner_function should be in the namespace"
+
+test_getnamespace_nested_function()
+
+def test_getnamespace_closure():
+    x = 10
+    def outer_function(y):
+        def inner_function():
+            return x + y
+        return inner_function
+
+    closure_function = outer_function(20)
+    namespace = getnamespace(closure_function)
+
+    assert 'x' in namespace and namespace['x'] == 10, "Expected x to be in namespace with value 10"
+    assert 'y' in namespace and namespace['y'] == 20, "Expected y to be in the closure with value 20"
+
+test_getnamespace_closure()
+
+# def getqualifiedname(namespace, object_, max_depth=5, visited=None) : inspect_utils.py
+# 44
+
+def test_basic_usage(self):
+    result = getqualifiedname(namespace, dummy_instance)
+    self.assertEqual(result, 'dummy_instance')
+
+def test_nested_modules(self):
+    result = getqualifiedname(namespace, OuterModule.InnerModule.inner_var)
+    self.assertEqual(result, 'OuterModule.InnerModule.inner_var')
+
+def test_object_not_in_namespace(self):
+    some_random_obj = "Not in namespace"
+    result = getqualifiedname(namespace, some_random_obj)
+    self.assertIsNone(result)
+
+# def getdefiningclass(m, owner_class) : inspect_utils.py
+# 45
+
+def setUp(self):
+    self.child_instance = ChildClass()
+
+def test_method_defined_in_base_class(self):
+    defining_class = getdefiningclass(ChildClass.method_in_base, ChildClass)
+    self.assertEqual(defining_class, BaseClass)
+
+def test_method_defined_in_child_class(self):
+    defining_class = getdefiningclass(ChildClass.method_in_child, ChildClass)
+    self.assertEqual(defining_class, ChildClass)
+
+def test_method_not_defined_in_any_class(self):
+    # Here we are trying to trick the function by passing a method not related to the class.
+    with self.assertRaises(ValueError):
+        defining_class = getdefiningclass(BaseClass.method_in_base, ChildClass)
+        self.assertNotEqual(defining_class, ChildClass)
+
+# def getmethodclass(m) : inspect_utils.py
+# 46
+
+class MyClass:
+    def instance_method(self):
+        pass
+
+def test_instance_method():
+    method_class = getmethodclass(MyClass().instance_method)
+    assert method_class == MyClass, f"Expected MyClass but got {method_class}"
+
+test_instance_method()
+
+
+class MyClass:
+    @classmethod
+    def class_method(cls):
+        pass
+
+def test_class_method():
+    method_class = getmethodclass(MyClass.class_method)
+    assert method_class == MyClass, f"Expected MyClass but got {method_class}"
+
+test_class_method()
+
+class CallableClass:
+    def __call__(self):
+        pass
+
+def test_callable_object():
+    obj = CallableClass()
+    method_class = getmethodclass(obj)
+    assert method_class == CallableClass, f"Expected CallableClass but got {method_class}"
+
+test_callable_object()
+
+# getfutureimports : inspect_utils.py
+# 47
+
+def test_no_future_imports(self):
+    # Define a function without any future imports
+    def no_future_imports_func():
+        return 5 + 2
+
+    # Test the getfutureimports function
+    result = getfutureimports(no_future_imports_func)
+    self.assertEqual(result, tuple())
+
+def test_single_future_import(self):
+    # Define a function with a single future import
+    def single_future_imports_func():
+        return 5 / 2
+
+    # Test the getfutureimports function
+    result = getfutureimports(single_future_imports_func)
+    self.assertEqual(result, ('division',))
+
+def test_multiple_future_imports(self):
+    # Define a function with multiple future imports
+    def multiple_future_imports_func():
+        print("This uses the future print_function")
+        return 5 / 2
+
+    # Test the getfutureimports function
+    result = getfutureimports(multiple_future_imports_func)
+    self.assertCountEqual(result, ('division', 'print_function'))
+
+# def new_symbol(self, name_root, reserved_locals) : naming.py
+# 48
+
+def test_basic_unique_name_generation():
+    namer = Namer(global_namespace={'existing_global': None})
+    new_name = namer.new_symbol('new_name', reserved_locals=[])
+    assert new_name == 'new_name'
+
+def test_handle_global_namespace_conflict():
+    namer = Namer(global_namespace={'new_name': None, 'new_name_1': None})
+    new_name = namer.new_symbol('new_name', reserved_locals=[])
+    assert new_name == 'new_name_2'
+
+def test_handle_reserved_locals_conflict():
+    namer = Namer(global_namespace={})
+    new_name = namer.new_symbol('new_name', reserved_locals=['new_name', qual_names.QN('new_name_1')])
+    assert new_name == 'new_name_2'
+
+
+# def _unfold_continuations(code_string) : parser.py
+# 49
+
+def test_single_continuation(self):
+    code_string = "a = 1 + \\\n2"
+    expected_output = "a = 1 + 2"
+    result = _unfold_continuations(code_string)
+    self.assertEqual(result, expected_output)
+
+def test_multiple_continuations(self):
+    code_string = "a = 1 + \\\n2 * \\\n3 - \\\n4"
+    expected_output = "a = 1 + 2 * 3 - 4"
+    result = _unfold_continuations(code_string)
+    self.assertEqual(result, expected_output)
+
+def test_no_continuations(self):
+    code_string = "a = 1 + 2"
+    expected_output = "a = 1 + 2"
+    result = _unfold_continuations(code_string)
+    self.assertEqual(result, expected_output)
+
+# def _arg_name(node) : parser.py
+# 50
+
+def test_gast_name_node(self):
+    node = gast.Name(id='x', ctx=gast.Load(), annotation=None, type_comment=None)
+    self.assertEqual(_arg_name(node), 'x')
+
+def test_string_input(self):
+    self.assertEqual(_arg_name('y'), 'y')
+
+def test_none_input(self):
+    self.assertIsNone(_arg_name(None))
+
+# NOTE:
+# AS DONE FOR THE JAVA BASELINE TEST SET, CHAT GPT4 WAS PROMPTED TO ANALYZE
+    # THE CLASS THAT CONTAINS THE METHOD OF INTEREST
+    # THEN, GPT4 WAS PROMPTED TO WRITE 3 TEST CASES FOR THE METHOD OF INTEREST
 
 
 
